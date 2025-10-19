@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Latitude & Longitude Map Tool</title>
+
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Leaflet.js for the interactive map -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <style>
+        /* Set a specific height for the map container */
+        #map {
+            height: 60vh;
+            /* 60% of the viewport height */
+            min-height: 400px;
+            /* Minimum height for smaller screens */
+        }
+
+        /* Simple transition for the message box */
+        #message-box {
+            transition: opacity 0.3s ease-in-out;
+        }
+    </style>
+</head>
+
+<body class="bg-gray-100 font-sans flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="w-full max-w-4xl bg-white rounded-xl shadow-lg p-6 space-y-6">
+
+        <!-- Header Section -->
+        <header class="text-center">
+            <h1 class="text-3xl font-bold text-gray-800">Latitude & Longitude Map Tool</h1>
+            <p class="text-gray-500 mt-1">Enter a coordinate to draw a line, or search for a location.</p>
+        </header>
+
+        <!-- Controls Section -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+            <!-- Coordinate Input & Drawing -->
+            <div class="bg-gray-50 p-4 rounded-lg border">
+                <label for="coord-input" class="block text-sm font-medium text-gray-700 mb-1">Enter Latitude or
+                    Longitude</label>
+                <input type="text" id="coord-input" placeholder="e.g., 51.7520 or -1.2493"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                <div class="flex space-x-2 mt-3">
+                    <button id="draw-lat-btn"
+                        class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">Draw
+                        Latitude</button>
+                    <button id="draw-lon-btn"
+                        class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors">Draw
+                        Longitude</button>
+                </div>
+            </div>
+
+            <!-- Location Search -->
+            <div class="bg-gray-50 p-4 rounded-lg border">
+                <label for="search-input" class="block text-sm font-medium text-gray-700 mb-1">Search for a
+                    Town/City</label>
+                <input type="text" id="search-input" placeholder="e.g., Oxford, UK"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
+                <div class="flex space-x-2 mt-3">
+                    <button id="search-btn"
+                        class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">Search
+                        Location</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Message Box for feedback -->
+        <div id="message-box" class="hidden p-3 rounded-md text-center text-sm"></div>
+
+        <!-- Map Container -->
+        <div id="map" class="w-full rounded-lg shadow-md border border-gray-200"></div>
+
+    </div>
+
+    <script>
+        // --- MAP INITIALIZATION ---
+        // Since you're in London, we'll centre the map there initially.
+        const map = L.map('map').setView([51.505, -0.09], 10);
+
+        // Add the OpenStreetMap tile layer
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+        }).addTo(map);
+
+        // --- STATE & UI ELEMENTS ---
+        let drawnLine = null; // Variable to hold the reference to the drawn line
+        const coordInput = document.getElementById('coord-input');
+        const searchInput = document.getElementById('search-input');
+        const drawLatBtn = document.getElementById('draw-lat-btn');
+        const drawLonBtn = document.getElementById('draw-lon-btn');
+        const searchBtn = document.getElementById('search-btn');
+        const messageBox = document.getElementById('message-box');
+
+        // --- HELPER FUNCTIONS ---
+
+        /**
+         * Displays a message to the user.
+         * @param {string} text - The message to display.
+         * @param {('success'|'error')} type - The type of message (for styling).
+         */
+        function showMessage(text, type = 'success') {
+            messageBox.textContent = text;
+            messageBox.className = `p-3 rounded-md text-center text-sm ${type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`;
+            messageBox.classList.remove('hidden');
+            // Hide the message after 4 seconds
+            setTimeout(() => {
+                messageBox.classList.add('hidden');
+            }, 4000);
+        }
+
+        /**
+         * Clears any previously drawn line from the map.
+         */
+        function clearLine() {
+            if (drawnLine) {
+                map.removeLayer(drawnLine);
+                drawnLine = null;
+            }
+        }
+
+        // --- CORE FUNCTIONALITY ---
+
+        /**
+         * Draws a horizontal line for a given latitude.
+         */
+        function drawLatitude() {
+            const lat = parseFloat(coordInput.value);
+            if (isNaN(lat) || lat < -90 || lat > 90) {
+                showMessage('Please enter a valid latitude (-90 to 90).', 'error');
+                return;
+            }
+
+            clearLine(); // Remove any existing line
+
+            // Get the current map view's longitude bounds
+            const bounds = map.getBounds();
+            const west = bounds.getWest();
+            const east = bounds.getEast();
+
+            const linePoints = [
+                [lat, west - 10], // Extend beyond the view for seamless panning
+                [lat, east + 10]
+            ];
+
+            drawnLine = L.polyline(linePoints, {
+                color: 'blue',
+                weight: 3,
+                dashArray: '5, 10'
+            }).addTo(map);
+
+            // Add a tooltip to the line
+            drawnLine.bindTooltip(`Latitude: ${lat}°`, { permanent: false, direction: 'center' });
+
+            // Fly to the line's general area
+            map.flyTo([lat, map.getCenter().lng], map.getZoom());
+            showMessage(`Drew latitude line at ${lat}°`, 'success');
+        }
+
+        /**
+         * Draws a vertical line for a given longitude.
+         */
+        function drawLongitude() {
+            const lon = parseFloat(coordInput.value);
+            if (isNaN(lon) || lon < -180 || lon > 180) {
+                showMessage('Please enter a valid longitude (-180 to 180).', 'error');
+                return;
+            }
+
+            clearLine(); // Remove any existing line
+
+            const bounds = map.getBounds();
+            const north = bounds.getNorth();
+            const south = bounds.getSouth();
+
+            const linePoints = [
+                [north + 10, lon], // Extend beyond the view
+                [south - 10, lon]
+            ];
+
+            drawnLine = L.polyline(linePoints, {
+                color: 'green',
+                weight: 3
+            }).addTo(map);
+
+            drawnLine.bindTooltip(`Longitude: ${lon}°`, { permanent: false, direction: 'center' });
+
+            map.flyTo([map.getCenter().lat, lon], map.getZoom());
+            showMessage(`Drew longitude line at ${lon}°`, 'success');
+        }
+
+        /**
+         * Searches for a location and moves the map view.
+         */
+        async function searchLocation() {
+            const query = searchInput.value;
+            if (!query) {
+                showMessage('Please enter a location to search.', 'error');
+                return;
+            }
+
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`;
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (data && data.length > 0) {
+                    const { lat, lon, display_name } = data[0];
+                    map.flyTo([lat, lon], 13); // Zoom to a city level
+                    showMessage(`Found: ${display_name}`, 'success');
+                } else {
+                    showMessage(`Could not find a location for "${query}".`, 'error');
+                }
+            } catch (error) {
+                console.error("Search error:", error);
+                showMessage('There was an issue with the search service.', 'error');
+            }
+        }
+
+        // --- EVENT LISTENERS ---
+        drawLatBtn.addEventListener('click', drawLatitude);
+        drawLonBtn.addEventListener('click', drawLongitude);
+        searchBtn.addEventListener('click', searchLocation);
+
+        // Allow pressing Enter to trigger actions
+        coordInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                // A simple heuristic: if the number is > 90 or < -90 it's likely a longitude
+                const value = parseFloat(coordInput.value);
+                if (!isNaN(value) && (value > 90 || value < -90 || value > -180 || value < 180)) {
+                    drawLongitude();
+                } else {
+                    drawLatitude();
+                }
+            }
+        });
+
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                searchLocation();
+            }
+        });
+
+    </script>
+</body>
+
+</html>
