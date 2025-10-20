@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Latitude & Longitude Map Tool</title>
+    <link rel="icon" href="https://img.icons8.com/stickers/100/map-marker.png" type="image/png">
 
     <!-- Tailwind CSS for styling -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -48,7 +49,7 @@
             <div class="bg-gray-50 p-4 rounded-lg border">
                 <label for="coord-input" class="block text-sm font-medium text-gray-700 mb-1">Enter Latitude or
                     Longitude</label>
-                <input type="text" id="coord-input" placeholder="Enter a latitude or longitude"
+                <input type="text" id="coord-input" placeholder="e.g., 51.5 or 51.5, -0.1"
                     class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
                 <div class="flex space-x-2 mt-3">
                     <button id="draw-lat-btn"
@@ -152,6 +153,35 @@
         }
 
         // --- CORE FUNCTIONALITY ---
+
+        /**
+         * Parses a "lat, lon" string and draws both lines.
+         * @param {string} inputValue - The string from the input field.
+         */
+        function drawBothFromInput(inputValue) {
+            const parts = inputValue.split(',').map(p => p.trim());
+
+            const lat = parseFloat(parts[0]);
+            const lon = parseFloat(parts[1]);
+
+            const isLatValid = !isNaN(lat) && lat >= -90 && lat <= 90;
+            const isLonValid = !isNaN(lon) && lon >= -180 && lon <= 180;
+
+            if (parts.length !== 2 || !isLatValid || !isLonValid) {
+                showMessage('Invalid format or values. Use "lat (-90 to 90), lon (-180 to 180)".', 'error');
+                return;
+            }
+
+            const latData = drawLatitude(lat);
+            const lonData = drawLongitude(lon);
+
+            if (latData && lonData) {
+                lineData.push(latData, lonData);
+                updateUrlWithLines();
+                showMessage(`Drew lines for Lat: ${lat}° and Lon: ${lon}°`, 'success');
+                coordInput.value = '';
+            }
+        }
 
         /**
          * Draws a horizontal line for a given latitude.
@@ -280,24 +310,34 @@
 
         // --- EVENT LISTENERS ---
         drawLatBtn.addEventListener('click', () => {
-            const val = parseFloat(coordInput.value);
-            const data = drawLatitude(val);
-            if (data) {
-                lineData.push(data);
-                updateUrlWithLines();
-                showMessage(`Drew latitude line at ${val}°`, 'success');
-                coordInput.value = ''; // Clear input on success
+            const inputValue = coordInput.value.trim();
+            if (inputValue.includes(',')) {
+                drawBothFromInput(inputValue);
+            } else {
+                const val = parseFloat(inputValue);
+                const data = drawLatitude(val);
+                if (data) {
+                    lineData.push(data);
+                    updateUrlWithLines();
+                    showMessage(`Drew latitude line at ${val}°`, 'success');
+                    coordInput.value = ''; // Clear input on success
+                }
             }
         });
 
         drawLonBtn.addEventListener('click', () => {
-            const val = parseFloat(coordInput.value);
-            const data = drawLongitude(val);
-            if (data) {
-                lineData.push(data);
-                updateUrlWithLines();
-                showMessage(`Drew longitude line at ${val}°`, 'success');
-                coordInput.value = ''; // Clear input on success
+            const inputValue = coordInput.value.trim();
+            if (inputValue.includes(',')) {
+                drawBothFromInput(inputValue);
+            } else {
+                const val = parseFloat(inputValue);
+                const data = drawLongitude(val);
+                if (data) {
+                    lineData.push(data);
+                    updateUrlWithLines();
+                    showMessage(`Drew longitude line at ${val}°`, 'success');
+                    coordInput.value = ''; // Clear input on success
+                }
             }
         });
 
@@ -307,12 +347,19 @@
         // Allow pressing Enter to trigger actions
         coordInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
-                const value = parseFloat(coordInput.value);
-                // Simple heuristic: if it could be a valid latitude, assume it is.
-                if (!isNaN(value) && value >= -90 && value <= 90) {
+                const inputValue = coordInput.value.trim();
+                if (inputValue.includes(',')) {
+                    // If it contains a comma, either button will trigger the new 'drawBoth' logic
                     drawLatBtn.click();
                 } else {
-                    drawLonBtn.click();
+                    const value = parseFloat(inputValue);
+                    // Simple heuristic: if it could be a valid latitude, click the latitude button.
+                    if (!isNaN(value) && value >= -90 && value <= 90) {
+                        drawLatBtn.click();
+                    } else {
+                        // Otherwise, try the longitude button.
+                        drawLonBtn.click();
+                    }
                 }
             }
         });
