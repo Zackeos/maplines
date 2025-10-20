@@ -55,7 +55,7 @@
                         class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-colors">Draw
                         Latitude</button>
                     <button id="draw-lon-btn"
-                        class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors">Draw
+                        class="w-full bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors">Draw
                         Longitude</button>
                 </div>
             </div>
@@ -70,6 +70,9 @@
                     <button id="search-btn"
                         class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors">Search
                         Location</button>
+                    <button id="clear-btn"
+                        class="w-full bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-colors">Clear
+                        Lines</button>
                 </div>
             </div>
         </div>
@@ -94,12 +97,13 @@
         }).addTo(map);
 
         // --- STATE & UI ELEMENTS ---
-        let drawnLine = null; // Variable to hold the reference to the drawn line
+        let drawnLines = []; // Array to hold all drawn lines
         const coordInput = document.getElementById('coord-input');
         const searchInput = document.getElementById('search-input');
         const drawLatBtn = document.getElementById('draw-lat-btn');
         const drawLonBtn = document.getElementById('draw-lon-btn');
         const searchBtn = document.getElementById('search-btn');
+        const clearBtn = document.getElementById('clear-btn');
         const messageBox = document.getElementById('message-box');
 
         // --- HELPER FUNCTIONS ---
@@ -120,13 +124,14 @@
         }
 
         /**
-         * Clears any previously drawn line from the map.
+         * Clears all previously drawn lines from the map.
          */
-        function clearLine() {
-            if (drawnLine) {
-                map.removeLayer(drawnLine);
-                drawnLine = null;
-            }
+        function clearAllLines() {
+            drawnLines.forEach(line => {
+                map.removeLayer(line);
+            });
+            drawnLines = [];
+            showMessage('All lines cleared.', 'success');
         }
 
         // --- CORE FUNCTIONALITY ---
@@ -141,26 +146,20 @@
                 return;
             }
 
-            clearLine(); // Remove any existing line
-
-            // Get the current map view's longitude bounds
-            const bounds = map.getBounds();
-            const west = bounds.getWest();
-            const east = bounds.getEast();
-
+            // Create a line that spans a huge longitude range to cover the whole map
             const linePoints = [
-                [lat, west - 10], // Extend beyond the view for seamless panning
-                [lat, east + 10]
+                [lat, -540], // Extend far beyond the standard -180 to 180 range
+                [lat, 540]
             ];
 
-            drawnLine = L.polyline(linePoints, {
+            const line = L.polyline(linePoints, {
                 color: 'blue',
                 weight: 3,
-                dashArray: '5, 10'
             }).addTo(map);
 
             // Add a tooltip to the line
-            drawnLine.bindTooltip(`Latitude: ${lat}°`, { permanent: false, direction: 'center' });
+            line.bindTooltip(`Latitude: ${lat}°`, { permanent: false, direction: 'center' });
+            drawnLines.push(line);
 
             // Fly to the line's general area
             map.flyTo([lat, map.getCenter().lng], map.getZoom());
@@ -177,23 +176,19 @@
                 return;
             }
 
-            clearLine(); // Remove any existing line
-
-            const bounds = map.getBounds();
-            const north = bounds.getNorth();
-            const south = bounds.getSouth();
-
+            // Create a line that spans the entire height of the globe
             const linePoints = [
-                [north + 10, lon], // Extend beyond the view
-                [south - 10, lon]
+                [-90, lon], // South Pole
+                [90, lon]   // North Pole
             ];
 
-            drawnLine = L.polyline(linePoints, {
-                color: 'green',
+            const line = L.polyline(linePoints, {
+                color: 'red',
                 weight: 3
             }).addTo(map);
 
-            drawnLine.bindTooltip(`Longitude: ${lon}°`, { permanent: false, direction: 'center' });
+            line.bindTooltip(`Longitude: ${lon}°`, { permanent: false, direction: 'center' });
+            drawnLines.push(line);
 
             map.flyTo([map.getCenter().lat, lon], map.getZoom());
             showMessage(`Drew longitude line at ${lon}°`, 'success');
@@ -232,6 +227,7 @@
         drawLatBtn.addEventListener('click', drawLatitude);
         drawLonBtn.addEventListener('click', drawLongitude);
         searchBtn.addEventListener('click', searchLocation);
+        clearBtn.addEventListener('click', clearAllLines);
 
         // Allow pressing Enter to trigger actions
         coordInput.addEventListener('keydown', (e) => {
