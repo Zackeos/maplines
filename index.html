@@ -48,7 +48,7 @@
             <div class="bg-gray-50 p-4 rounded-lg border">
                 <label for="coord-input" class="block text-sm font-medium text-gray-700 mb-1">Enter Latitude or
                     Longitude</label>
-                <input type="text" id="coord-input" placeholder="Coordinate"
+                <input type="text" id="coord-input" placeholder="Enter a latitude or longitude"
                     class="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500">
                 <div class="flex space-x-2 mt-3">
                     <button id="draw-lat-btn"
@@ -97,7 +97,8 @@
         }).addTo(map);
 
         // --- STATE & UI ELEMENTS ---
-        let drawnLines = []; // Array to hold all drawn lines
+        let drawnLines = []; // Array to hold all drawn Leaflet layer objects
+        let lineData = []; // Array to hold serialisable line data for the URL
         const coordInput = document.getElementById('coord-input');
         const searchInput = document.getElementById('search-input');
         const drawLatBtn = document.getElementById('draw-lat-btn');
@@ -107,6 +108,20 @@
         const messageBox = document.getElementById('message-box');
 
         // --- HELPER FUNCTIONS ---
+
+        /**
+         * Updates the URL hash with the current set of lines.
+         */
+        function updateUrlWithLines() {
+            if (lineData.length > 0) {
+                // Format: #lines=lat,51.5;lon,-0.09;lat,40.7
+                const hashContent = lineData.map(line => `${line.type},${line.value}`).join(';');
+                window.location.hash = `lines=${hashContent}`;
+            } else {
+                // Clear the hash without reloading the page
+                history.pushState("", document.title, window.location.pathname + window.location.search);
+            }
+        }
 
         /**
          * Displays a message to the user.
@@ -131,6 +146,8 @@
                 map.removeLayer(line);
             });
             drawnLines = [];
+            lineData = []; // Clear the data array as well
+            updateUrlWithLines(); // Update the URL to remove line data
             showMessage('All lines cleared.', 'success');
         }
 
@@ -138,12 +155,13 @@
 
         /**
          * Draws a horizontal line for a given latitude.
+         * @param {number} lat - The latitude value.
+         * @returns {object|null} - The line data object on success, or null on failure.
          */
-        function drawLatitude() {
-            const lat = parseFloat(coordInput.value);
+        function drawLatitude(lat) {
             if (isNaN(lat) || lat < -90 || lat > 90) {
-                showMessage('Please enter a valid latitude (-90 to 90).', 'error');
-                return;
+                if (coordInput.value) showMessage('Please enter a valid latitude (-90 to 90).', 'error');
+                return null;
             }
 
             // Create a line that spans a huge longitude range to cover the whole map
@@ -163,17 +181,18 @@
 
             // Fly to the line's general area
             map.flyTo([lat, map.getCenter().lng], map.getZoom());
-            showMessage(`Drew latitude line at ${lat}°`, 'success');
+            return { type: 'lat', value: lat };
         }
 
         /**
          * Draws a vertical line for a given longitude.
+         * @param {number} lon - The longitude value.
+         * @returns {object|null} - The line data object on success, or null on failure.
          */
-        function drawLongitude() {
-            const lon = parseFloat(coordInput.value);
+        function drawLongitude(lon) {
             if (isNaN(lon) || lon < -180 || lon > 180) {
-                showMessage('Please enter a valid longitude (-180 to 180).', 'error');
-                return;
+                if (coordInput.value) showMessage('Please enter a valid longitude (-180 to 180).', 'error');
+                return null;
             }
 
             // Create a line that spans the entire height of the globe
@@ -191,7 +210,7 @@
             drawnLines.push(line);
 
             map.flyTo([map.getCenter().lat, lon], map.getZoom());
-            showMessage(`Drew longitude line at ${lon}°`, 'success');
+            return { type: 'lon', value: lon };
         }
 
         /**
@@ -223,21 +242,77 @@
             }
         }
 
+        /**
+         * Reads the URL hash on page load and draws any specified lines.
+         */
+        function loadLinesFromUrl() {
+            const hash = window.location.hash;
+            if (!hash.startsWith('#lines=')) return;
+
+            const dataString = hash.substring(7); // remove '#lines='
+            const linesToDraw = dataString.split(';');
+
+            linesToDraw.forEach(lineString => {
+                const parts = lineString.split(',');
+                if (parts.length !== 2) return;
+
+                const type = parts[0];
+                const value = parseFloat(parts[1]);
+
+                if (isNaN(value)) return;
+
+                let data;
+                if (type === 'lat') {
+                    data = drawLatitude(value);
+                } else if (type === 'lon') {
+                    data = drawLongitude(value);
+                }
+
+                if (data) {
+                    lineData.push(data);
+                }
+            });
+
+            if (lineData.length > 0) {
+                showMessage(`${lineData.length} line(s) loaded from URL.`, 'success');
+            }
+        }
+
         // --- EVENT LISTENERS ---
-        drawLatBtn.addEventListener('click', drawLatitude);
-        drawLonBtn.addEventListener('click', drawLongitude);
+        drawLatBtn.addEventListener('click', () => {
+            const val = parseFloat(coordInput.value);
+            const data = drawLatitude(val);
+            if (data) {
+                lineData.push(data);
+                updateUrlWithLines();
+                showMessage(`Drew latitude line at ${val}°`, 'success');
+                coordInput.value = ''; // Clear input on success
+            }
+        });
+
+        drawLonBtn.addEventListener('click', () => {
+            const val = parseFloat(coordInput.value);
+            const data = drawLongitude(val);
+            if (data) {
+                lineData.push(data);
+                updateUrlWithLines();
+                showMessage(`Drew longitude line at ${val}°`, 'success');
+                coordInput.value = ''; // Clear input on success
+            }
+        });
+
         searchBtn.addEventListener('click', searchLocation);
         clearBtn.addEventListener('click', clearAllLines);
 
         // Allow pressing Enter to trigger actions
         coordInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') {
-                // A simple heuristic: if the number is > 90 or < -90 it's likely a longitude
                 const value = parseFloat(coordInput.value);
-                if (!isNaN(value) && (value > 90 || value < -90 || value > -180 || value < 180)) {
-                    drawLongitude();
+                // Simple heuristic: if it could be a valid latitude, assume it is.
+                if (!isNaN(value) && value >= -90 && value <= 90) {
+                    drawLatBtn.click();
                 } else {
-                    drawLatitude();
+                    drawLonBtn.click();
                 }
             }
         });
@@ -247,6 +322,9 @@
                 searchLocation();
             }
         });
+
+        // Load lines from URL when the page has fully loaded
+        window.addEventListener('DOMContentLoaded', loadLinesFromUrl);
 
     </script>
 </body>
